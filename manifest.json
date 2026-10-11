@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "FocusGate Kids - Anti-Brainrot Blocker",
+  "version": "2.4.1",
+  "description": "Scheduled parental web access control with editable schedules, quotas, grace warnings, active-tab enforcement, bilingual UI, and selectable block-page themes.",
+  "permissions": [
+    "declarativeNetRequest",
+    "storage",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "FocusGate Kids Shield"
+  },
+  "options_page": "options.html",
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "blocked.html",
+        "blocked.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "version_name": "2.4.1-distinct-themes"
+}

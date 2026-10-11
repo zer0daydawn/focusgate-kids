@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Screen Break Time! - FocusGate Kids</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #edf4ff;
+      --card: #ffffff;
+      --card-soft: #f5f8ff;
+      --surface: #eef5ff;
+      --border: #d7e3fb;
+      --border-soft: #e4ecfb;
+      --text: #263553;
+      --muted: #6a7897;
+      --accent: #5f79e8;
+      --accent-hover: #4d67d3;
+      --accent-soft: #e4ecff;
+      --secondary: #8d84ef;
+      --site: #4f67db;
+      --shadow: 0 22px 55px rgba(77, 106, 160, 0.16);
+      --radius-card: 24px;
+      --radius-box: 14px;
+      --button-radius: 12px;
+    }
+    body[data-theme="playful"] {
+      --bg: #faf0ff;
+      --card: #ffffff;
+      --card-soft: #fff7fd;
+      --surface: #fff1f8;
+      --border: #efd3f8;
+      --border-soft: #f6e1fb;
+      --text: #4b3260;
+      --muted: #8c6fa0;
+      --accent: #ad5bf2;
+      --accent-hover: #9447df;
+      --accent-soft: #f2e3ff;
+      --secondary: #ff90bf;
+      --site: #dd5ea8;
+      --shadow: 0 24px 60px rgba(172, 91, 182, 0.2);
+      --radius-card: 30px;
+      --radius-box: 18px;
+      --button-radius: 16px;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      transition: background .2s ease;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      max-width: 620px;
+      width: 100%;
+      padding: 42px;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+    body[data-theme="playful"] .card { border-width: 2px; }
+    body[data-theme="playful"] .activities-title { color: var(--accent); }
+    body[data-theme="playful"] .btn-parent:hover { border-color: var(--secondary); color: var(--site); }
+    body[data-theme="playful"] .activity-emoji { filter: saturate(1.1); }
+    .shield-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      padding: 7px 16px;
+      border-radius: 999px;
+      margin-bottom: 22px;
+    }
+    body[data-theme="playful"] .shield-badge { padding: 8px 18px; }
+    h1 {
+      font-size: 29px;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+    p.lead {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.65;
+      margin-bottom: 24px;
+    }
+    .highlight-site { color: var(--site); font-weight: 700; }
+    .message-box {
+      background: var(--card-soft);
+      border: 1px solid var(--border-soft);
+      border-left: 4px solid var(--accent);
+      padding: 16px 20px;
+      border-radius: var(--radius-box);
+      text-align: left;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.55;
+      margin-bottom: 28px;
+    }
+    body[data-theme="playful"] .message-box { border-left-width: 5px; }
+    .activities-grid {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-box);
+      padding: 20px;
+      margin-bottom: 28px;
+      text-align: left;
+    }
+    .activities-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: .055em;
+      margin-bottom: 12px;
+    }
+    .activity-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border-soft);
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-emoji { font-size: 18px; }
+    .btn-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    button {
+      padding: 11px 22px;
+      border-radius: var(--button-radius);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .15s ease, background .15s ease, border-color .15s ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    .btn-primary { background: var(--accent); color: white; border: none; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-parent { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-parent:hover { color: var(--text); border-color: var(--secondary); }
+    .pin-prompt {
+      margin-top: 20px;
+      padding: 16px;
+      background: var(--card-soft);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-box);
+      display: none;
+    }
+    .pin-input {
+      background: #fff;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 16px;
+      letter-spacing: .2em;
+      text-align: center;
+      width: 120px;
+      margin-right: 8px;
+    }
+    #pinError { color: #d34c69 !important; }
+    @media (max-width: 560px) {
+      body { padding: 14px; }
+      .card { padding: 30px 22px; }
+      h1 { font-size: 25px; }
+      .btn-group { flex-direction: column; }
+      .btn-group button { width: 100%; }
+    }
+  </style>
+</head>
+<body data-theme="calm">
+  <div class="card">
+    <div class="shield-badge">
+      <span>🛡️</span>
+      <span>Brain-Rot Protected</span>
+    </div>
+
+    <h1 id="siteTitle">Time for Real-World Play!</h1>
+    
+    <p class="lead">
+      Access to <span class="highlight-site" id="domainName">this video or social site</span> is currently paused by your scheduled screen time routine.
+    </p>
+
+    <div class="message-box">
+      "Real adventures happen in the real world! Give your brain a break from the screen."
+    </div>
+
+    <div class="activities-grid">
+      <div class="activities-title">
+        <span>💡 Healthy Fun Ideas Right Now</span>
+      </div>
+      <div class="activity-item">
+        <span class="activity-emoji">📚</span>
+        <span>Read a comic book, fantasy novel, or mystery story</span>
+      </div>
+      <div class="activity-item">
+        <span class="activity-emoji">🧱</span>
+        <span>Build something awesome with Lego, blocks, or cardboard</span>
+      </div>
+      <div class="activity-item">
+        <span class="activity-emoji">🚲</span>
+        <span>Ride your bicycle, skateboard, or toss a ball outside</span>
+      </div>
+      <div class="activity-item">
+        <span class="activity-emoji">🎨</span>
+        <span>Draw a superhero, design an invention, or color</span>
+      </div>
+    </div>
+
+    <div class="btn-group">
+      <button class="btn-primary" id="btnBack">Go Back & Do Something Else</button>
+      <button class="btn-parent" id="btnAskParent">Parent PIN Override</button>
+    </div>
+
+    <div class="pin-prompt" id="pinBox">
+      <p style="font-size: 13px; color: #cbd5e1; margin-bottom: 8px;">Enter 4-Digit Parent PIN for a 15-minute pass:</p>
+      <input type="password" id="pinInput" class="pin-input" maxlength="6" placeholder="••••" />
+      <button class="btn-primary" id="btnSubmitPin" style="padding: 8px 16px;">Verify</button>
+      <div id="pinError" style="color: #f43f5e; font-size: 12px; margin-top: 6px; display: none;"></div>
+    </div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="blocked.js"></script>
+</body>
+</html>
