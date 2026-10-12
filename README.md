@@ -1,59 +1,199 @@
 # FocusGate Kids
 
-Extension Chrome (Manifest V3) de contrôle parental des sites Web : horaires, quotas et page de pause adaptée aux enfants.
+**A smarter way to manage screen time, reduce digital distractions, and encourage healthier browsing habits for children.**
 
-## Versions
+FocusGate Kids is a parental control extension for Google Chrome, built on Manifest V3. It gives parents practical tools to manage when children can access certain websites, how much time they spend on different types of content, and what happens when a browsing restriction is reached.
 
-- **Dernière version locale validée : v2.4.5.**
-- **Attention :** le code complet de la v2.4.5 n'a pas encore été synchronisé avec la branche `main`. Vérifier `manifest.json` avant d'installer depuis GitHub.
-- La livraison finale v2.4.5 retire le bouton temporaire **« 🔒 Reverrouiller maintenant »** et son texte d'aide.
+Rather than simply blocking everything, FocusGate Kids promotes a balanced approach to digital well-being by combining configurable schedules, daily usage limits, parent-approved exceptions, and child-friendly feedback.
 
-## Fonctionnalités
+The project is particularly focused on reducing exposure to highly engaging content such as endless short-video feeds, social media, and gaming websites during homework, family time, and bedtime.
 
-- Blocage de domaines et de sous-chemins (ex. `youtube.com/shorts`), y compris les sous-domaines.
-- Horaires récurrents, exceptions par date et quotas quotidiens par catégorie.
-- Avertissements de fin de période et contrôle des onglets ouverts.
-- Interface bilingue français/anglais et thèmes de blocage **Calme** et **Ludique**.
-- Autorisation parentale temporaire de 15 minutes.
-- NIP dérivé avec PBKDF2, authentification dans le service worker, limitation des tentatives et session du tableau de bord.
-- Boîte **Notifications** informant le parent des écarts d'horloge possibles.
+## Why FocusGate Kids?
 
-## Détection de changements d'heure — v2.4.5
+Children increasingly encounter websites and platforms designed to maximize engagement through endless scrolling, recommendations, and immediate rewards.
 
-La boîte **Notifications** affiche des événements indicatifs :
+FocusGate Kids helps parents establish predictable boundaries without having to manually supervise every browsing session.
 
-1. **Détection locale (v2.4.4)** : comparaison entre l'heure système et une horloge monotone pendant l'exécution du service worker ; seuil de 2 minutes.
-2. **Vérification Internet (v2.4.5)** : récupération d'une référence UTC depuis `https://worldtimeapi.org/api/timezone/Etc/UTC` au démarrage et environ toutes les 15 minutes ; notification au-delà de 5 minutes d'écart.
+**The goal is not to eliminate screen time, but to make it more intentional, manageable, and appropriate for family routines.**
 
-Les 20 dernières notifications sont conservées localement. Les vérifications ne bloquent pas automatiquement les sites, et un changement d'heure détecté n'est pas une preuve d'intention. Sans connexion Internet, la vérification externe n'est pas disponible. La mise en veille et la suspension du service worker peuvent limiter la détection locale.
+## Key Features
 
-La requête vers WorldTimeAPI peut exposer l'adresse IP au fournisseur ; elle ne transmet volontairement ni NIP ni historique de navigation.
+### Scheduled Website Access
 
-## Installer l'archive locale v2.4.5
+Create flexible browsing schedules based on your family's routine.
 
-1. Décompresser `FocusGate-Kids-v2.4.5-final-README.zip` dans un dossier permanent.
-2. Ouvrir `chrome://extensions` et activer **Mode développeur**.
-3. Cliquer **Charger l'extension non empaquetée** et sélectionner le dossier où se trouve `manifest.json`.
-4. Confirmer que la version affichée est **2.4.5**.
-5. Ouvrir le tableau de bord et vérifier les réglages et la boîte Notifications.
+- Block selected websites during school hours, homework, or bedtime.
+- Define recurring rules for specific days of the week.
+- Configure both blocked periods and permitted access windows.
+- Apply restrictions to selected website categories.
+- Create date-specific exceptions for holidays, special occasions, or family activities.
 
-Pour mettre à jour une installation existante, sauvegarder le dossier, remplacer ses fichiers et actualiser l'extension existante dans Chrome **sans la supprimer**. Une nouvelle installation avec un identifiant différent ne reprend pas automatiquement le stockage local et le NIP.
+### Daily Screen Time Quotas
 
-## Sécurité et limites
+Set daily usage limits for different content categories.
 
-- Le NIP ne peut pas empêcher l'utilisateur de désactiver ou supprimer l'extension via Chrome.
-- Un utilisateur ayant le contrôle du profil ou du stockage local peut contourner certaines restrictions.
-- **Écart à corriger :** dans l'archive v2.4.5 fournie, la constante `FG_PIN_LOCK_MS` vaut encore **15 minutes** alors que la configuration souhaitée était **5 minutes**. Cette anomalie reste à corriger et tester dans le code ; une modification du README ne change pas le comportement.
-- La vérification d'horloge est informative, et non une source de temps imposée à tous les horaires.
+Supported categories include:
 
-## Historique
+- Short-form video platforms
+- Social media
+- Gaming websites
+- Long-form video and streaming
+- Custom websites
 
-| Version | Changements |
-| --- | --- |
-| 2.4.1 | Thèmes Calme et Ludique |
-| 2.4.2 | Renforcement et limitation des tentatives du NIP |
-| 2.4.3 | Contrôles des autorisations et sessions parentales |
-| 2.4.4 | Notifications locales d'écarts d'horloge |
-| **2.4.5** | Vérification de l'heure Internet et retrait du bouton de test |
+FocusGate Kids tracks usage locally and restricts access when an enabled category reaches its daily allowance.
 
-FocusGate Kids vise une protection parentale simple et proportionnée à un usage familial.
+### Website and URL Filtering
+
+Manage access to individual websites or more specific sections of a platform.
+
+For example, restrictions can target:
+
+- `youtube.com`
+- `youtube.com/shorts`
+- `tiktok.com`
+- `instagram.com`
+
+Domain and path-based filtering provide greater flexibility than simple website-wide blocking. Subdomains are also supported.
+
+### Child-Friendly Blocking Experience
+
+When a website becomes unavailable, FocusGate Kids displays a dedicated pause screen rather than a generic browser error.
+
+Parents can select between two visual themes:
+
+- **Calm:** A soft, reassuring interface with gentle blue and purple tones.
+- **Playful:** A more colorful and engaging experience designed for children.
+
+The blocking page encourages children to move on to another activity and provides a way to request temporary parental authorization.
+
+### Parent PIN Protection
+
+Sensitive configuration changes require parental authentication.
+
+Security controls include:
+
+- PBKDF2-SHA256 PIN derivation with a random salt.
+- PIN verification performed by the extension service worker.
+- Failed authentication attempt limiting.
+- Temporary lockout after repeated incorrect attempts.
+- Time-limited authorization for parental dashboard operations.
+
+These controls help prevent casual unauthorized changes but do not make the extension tamper-proof.
+
+### Temporary Parent Access
+
+Parents can grant a temporary **15-minute access pass** after successful PIN authentication.
+
+This is useful for exceptional situations where access is needed without permanently modifying established schedules or restrictions.
+
+Once the temporary authorization expires, the normal restrictions are reapplied.
+
+### Time Change Notifications
+
+FocusGate Kids includes advisory mechanisms that help parents identify possible inconsistencies in the computer's clock.
+
+Two complementary approaches are used:
+
+**Local time change detection — v2.4.4**
+
+Compares system time with a monotonic clock while the extension service worker is running. Significant differences of approximately two minutes or more can generate a notification.
+
+**Internet time verification — v2.4.5**
+
+Periodically checks the computer's reported time against a UTC reference obtained from WorldTimeAPI. Differences greater than five minutes can be reported.
+
+The most recent 20 notifications are retained locally.
+
+These checks are informational. They do not automatically enforce network-based time, and clock discrepancies are not proof of intentional manipulation.
+
+## How It Works
+
+FocusGate Kids uses Chrome Manifest V3 technologies to evaluate browsing restrictions and enforce configured rules.
+
+The extension combines scheduled evaluations, browser navigation controls, declarative network request rules, and local configuration storage.
+
+Parents manage the extension through a dashboard, while children see a simplified pause screen when access is restricted.
+
+The main capabilities are designed to operate locally without requiring a user account or dedicated cloud service.
+
+## Installation
+
+FocusGate Kids is currently intended for manual installation in Google Chrome.
+
+1. Download or clone this GitHub repository.
+2. Extract the downloaded ZIP, if applicable, into a permanent folder.
+3. Open `chrome://extensions` in Google Chrome.
+4. Enable **Developer mode**.
+5. Select **Load unpacked**.
+6. Choose the folder containing `manifest.json`.
+7. Confirm that the extension appears in Chrome.
+
+The repository currently declares version **2.4.5** in its manifest.
+
+### Initial Configuration
+
+After installation:
+
+1. Open the FocusGate Kids parental dashboard.
+2. Change the default parental PIN immediately.
+3. Review the predefined website categories and example schedules.
+4. Customize permitted browsing periods and daily quotas.
+5. Select your preferred blocking screen theme.
+6. Test restrictions and temporary parental access.
+
+The initial PIN in the current project configuration is `1234`. It must be changed before relying on parental restrictions.
+
+### Updating the Extension
+
+When updating an existing unpacked installation, replace the extension files in the original folder and reload the extension from `chrome://extensions`.
+
+Avoid removing and reinstalling the extension unnecessarily, since a different extension ID may prevent automatic reuse of existing local settings and PIN credentials.
+
+## Security and Privacy
+
+FocusGate Kids is designed for family use, with an emphasis on local processing and proportionate parental controls.
+
+- Configuration and usage information are stored using Chrome's local extension storage.
+- PIN credentials are stored as salted, derived values after initialization or migration.
+- Sensitive parental operations are authenticated by the extension service worker.
+- No dedicated FocusGate Kids account is required.
+- The Internet time verification feature contacts WorldTimeAPI, which may receive connection metadata such as the public IP address.
+- PIN values and browsing history are not intentionally transmitted to the time verification service.
+
+### Important Security Limitations
+
+FocusGate Kids is a browser extension, not a full operating-system parental control solution.
+
+It cannot prevent someone with sufficient access to Chrome or the computer from disabling, removing, or otherwise bypassing the extension.
+
+It also cannot enforce browsing restrictions outside the browser environment in which it is installed.
+
+Time-based restrictions depend on the browser environment and local system clock. Internet time verification provides notifications, not an authoritative time source for access enforcement.
+
+**Current known issue:** Version 2.4.5 uses a 15-minute PIN lockout after five failed attempts. A previously proposed reduction to five minutes has not yet been implemented.
+
+For stronger protection, FocusGate Kids should be combined with appropriate device-level parental controls and restricted operating-system permissions.
+
+## Version History
+
+| Version | Highlights |
+|---|---|
+| v2.4.1 | Calm and Playful blocking page themes |
+| v2.4.2 | Improved PIN security and failed-attempt protection |
+| v2.4.3 | Parent dashboard authorization and session controls |
+| v2.4.4 | Local system clock change notifications |
+| v2.4.5 | Internet time verification and removal of temporary testing controls |
+
+## Project Philosophy
+
+FocusGate Kids is built around three principles:
+
+**Balance over restriction.** Technology can be part of a healthy childhood when clear boundaries exist.
+
+**Parent control with child-friendly communication.** Restrictions should be understandable rather than intimidating or unnecessarily punitive.
+
+**Practical security and transparency.** Parental control mechanisms should be effective within their technical limits, without promising protection they cannot guarantee.
+
+---
+
+**FocusGate Kids — Helping families build healthier digital habits, one browsing session at a time.**
