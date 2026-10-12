@@ -57,6 +57,7 @@ btnSubmitPin.addEventListener('click', () => {
 
   chrome.runtime.sendMessage({ type: 'VERIFY_PIN_AND_PASS', pin, minutes: 15 }, (res) => {
     if (res && res.success) {
+      pinInput.value = '';
       if (domain && !domain.includes('blocked.html')) {
         window.location.href = domain.startsWith('http') ? domain : ('https://' + domain);
       } else {

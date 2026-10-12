@@ -323,6 +323,17 @@
   </header>
 
   <main>
+      <!-- v2.4.4: informative notifications; not an indication of malicious activity -->
+      <section class="card" id="fgNotificationsBox" style="margin:16px 0 20px; border:1px solid #334155; padding:16px; border-radius:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <h2 id="fgNotificationsTitle" style="font-size:16px; margin:0;">Notifications</h2>
+          <span id="fgNotificationsCount" style="font-size:12px;color:#a1a1aa;">0</span>
+        </div>
+        <p id="fgNotificationsIntro" style="font-size:12px;color:#a1a1aa;margin:8px 0 12px;">Possible computer clock changes (informational only).</p>
+        <p id="fgRemoteTimeStatusV245" style="font-size:12px;color:#a1a1aa;margin:0 0 10px;">Vérification réseau en attente…</p>
+        <div id="fgNotificationsList" aria-live="polite" style="display:grid;gap:8px;font-size:13px;">No notifications.</div>
+      </section>
+
     <!-- TAB 1: OVERVIEW -->
     <div id="tab-overview" class="tab-content active">
       <div class="banner">
@@ -611,5 +622,9 @@
 
   <script src="i18n.js"></script>
   <script src="options.js"></script>
+<div id="fgRelockTestToolbar" style="position:fixed;bottom:18px;right:18px;z-index:9999;background:#111827;border:1px solid #64748b;border-radius:12px;padding:10px;box-shadow:0 8px 24px #0006;max-width:280px;">
+  <button id="fgRelockNow" style="background:#334155;color:#fff;border:0;border-radius:8px;padding:9px 12px;cursor:pointer;font-weight:600;">🔒 Reverrouiller maintenant</button>
+  <div id="fgRelockStatus" role="status" style="font-size:12px;color:#cbd5e1;margin-top:5px;">Pour retester le NIP parental.</div>
+</div>
 </body>
 </html>

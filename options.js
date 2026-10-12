@@ -1,5 +1,6 @@
 let currentConfig = null;
 let isParentUnlocked = false;
+let fgSessionToken = null;
 let dailyQuotaUsage = null;
 const tr = (text) => window.fgI18n ? window.fgI18n.t(text) : text;
 
@@ -262,7 +263,6 @@ const DEFAULT_CFG = {
   "settings": {
     "language": "en",
     "globalEnabled": true,
-    "parentPin": "1234",
     "isParentUnlocked": false,
     "antiBrainrotPreset": "strict_child",
     "blockPageStyle": "kid_friendly",
@@ -382,9 +382,18 @@ async function loadConfig() {
 }
 
 async function saveConfig() {
-  await chrome.storage.local.set({ focusGateConfig: currentConfig });
-  chrome.runtime.sendMessage({ type: 'REFRESH_RULES' });
-  renderAll();
+  if (!isParentUnlocked || !fgSessionToken) {renderAll();return false;}
+  if(currentConfig.settings) delete currentConfig.settings.parentPin;
+  let result;
+  try {
+    result = await chrome.runtime.sendMessage({type:'SAVE_PARENT_CONFIG',token:fgSessionToken,config:currentConfig});
+  } catch (_) {result={success:false,error:'Service worker unavailable'};}
+  if(!result?.success){
+    fgSessionToken=null;isParentUnlocked=false;renderLockState();
+    alert(result?.error || 'Parent session expired');
+    await loadConfig();return false;
+  }
+  renderAll();return true;
 }
 
 // Navigation Tabs
@@ -413,7 +422,9 @@ const btnCancelModal = document.getElementById('btnCancelModal');
 
 btnPinLock.addEventListener('click', () => {
   if (isParentUnlocked) {
+    fgSessionToken = null;
     isParentUnlocked = false;
+    chrome.runtime.sendMessage({type:'LOCK_PARENT_DASHBOARD'});
     renderLockState();
   } else {
     modalPinInput.value = '';
@@ -428,14 +439,24 @@ btnCancelModal.addEventListener('click', () => {
 });
 
 btnVerifyModal.addEventListener('click', () => {
-  const correct = currentConfig?.settings?.parentPin || '1234';
-  if (modalPinInput.value === correct) {
-    isParentUnlocked = true;
-    pinModal.style.display = 'none';
-    renderLockState();
-  } else {
-    modalPinError.style.display = 'block';
-  }
+  const pin = modalPinInput.value;
+  modalPinInput.value = '';
+  chrome.runtime.sendMessage({type:'UNLOCK_PARENT_DASHBOARD',pin}, res => {
+    if (chrome.runtime.lastError || !res) {
+      modalPinError.style.display = 'block';
+      modalPinError.textContent = 'Service worker unavailable or missing v2.4.3 auth handler. Reload extension in chrome://extensions.';
+      return;
+    }
+    if(res.success && typeof res.token === 'string'){
+      fgSessionToken = res.token;
+      isParentUnlocked = true;
+      pinModal.style.display = 'none';
+      renderLockState();
+    } else {
+      modalPinError.style.display = 'block';
+      modalPinError.textContent = res?.error || tr('Wrong PIN');
+    }
+  });
 });
 
 function renderLockState() {
@@ -469,10 +490,9 @@ document.getElementById('btnPass15').addEventListener('click', () => {
     btnPinLock.click();
     return;
   }
-  const expiry = Date.now() + 15 * 60 * 1000;
-  chrome.storage.local.set({ emergencyPassExpiry: expiry }, () => {
-    chrome.runtime.sendMessage({ type: 'REFRESH_RULES' });
-    alert(tr('15-Minute screen pass granted for your child!'));
+  chrome.runtime.sendMessage({type:'GRANT_PARENT_PASS',token:fgSessionToken},res => {
+    if(res?.success) alert(tr('15-Minute screen pass granted for your child!'));
+    else {fgSessionToken=null;isParentUnlocked=false;renderLockState();alert(res?.error || tr('Wrong PIN'));}
   });
 });
 
@@ -928,3 +948,89 @@ if (blockPageThemeSelect) {
 }
 
 loadConfig();
+
+// Explicit security-test control: re-lock dashboard, not the failed-attempt counter.
+document.getElementById('fgRelockNow')?.addEventListener('click', async () => {
+  fgSessionToken = null;
+  isParentUnlocked = false;
+  try {await chrome.runtime.sendMessage({type:'LOCK_PARENT_DASHBOARD'});}catch(_){}
+  renderLockState();
+  document.getElementById('fgRelockStatus').textContent = 'Tableau de bord reverrouillé. Entrez le NIP pour reprendre.';
+});
+
+
+// v2.4.4 notifications: read-only view of locally detected time jumps.
+(function fgInitClockNotifications() {
+  const key = 'fgClockNotificationsV244';
+  const list = document.getElementById('fgNotificationsList');
+  const count = document.getElementById('fgNotificationsCount');
+  const intro = document.getElementById('fgNotificationsIntro');
+  if (!list || !count) return;
+  function isFrench() { return document.documentElement.lang === 'fr'; }
+  function render(events) {
+    const french = isFrench();
+    const rows = Array.isArray(events) ? events : [];
+    document.getElementById('fgNotificationsTitle').textContent = 'Notifications';
+    intro.textContent = french
+      ? "Changements possibles de l’heure Windows (information seulement; une veille ou une synchronisation automatique peut produire une alerte)."
+      : 'Possible Windows clock changes (information only; sleep or automatic synchronization may also trigger an alert).';
+    count.textContent = String(rows.length);
+    list.replaceChildren();
+    if (!rows.length) {
+      const p = document.createElement('p');
+      p.textContent = french ? 'Aucune notification.' : 'No notifications.';
+      list.appendChild(p);
+      return;
+    }
+    rows.forEach(event => {
+      const item = document.createElement('div');
+      item.style.cssText = 'padding:10px 12px;border:1px solid #3f3f46;border-radius:8px;background:#18181b;';
+      const minutes = Math.abs(Number(event.changeMinutes || 0));
+      const direction = event.direction === 'backward'
+        ? (french ? 'recul' : 'backward')
+        : (french ? 'avance' : 'forward');
+      const formatted = new Date(event.timestamp).toLocaleString(french ? 'fr-CA' : 'en-CA');
+      item.textContent = french
+        ? `${formatted} — Changement d’heure possible : ${direction} d’environ ${minutes} min.`
+        : `${formatted} — Possible clock change: ${direction} by approximately ${minutes} min.`;
+      list.appendChild(item);
+    });
+  }
+  chrome.storage.local.get([key]).then(data => render(data[key])).catch(() => render([]));
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes[key]) render(changes[key].newValue);
+  });
+})();
+
+
+// v2.4.5: network-time verification status in the existing Notifications box.
+(function fgRemoteTimeStatusUiV245() {
+  const el = document.getElementById('fgRemoteTimeStatusV245');
+  if (!el) return;
+  const key = 'fgRemoteTimeStatusV245';
+  function render(status) {
+    const fr = document.documentElement.lang === 'fr';
+    if (!status || !status.checkedAt) {
+      el.textContent = fr ? 'Vérification réseau en attente…' : 'Network time check pending…';
+      return;
+    }
+    const when = new Date(status.checkedAt).toLocaleString(fr ? 'fr-CA' : 'en-CA');
+    if (!status.ok) {
+      el.textContent = fr
+        ? `Heure de référence indisponible (dernière tentative : ${when}).`
+        : `Reference time unavailable (last attempt: ${when}).`;
+    } else if (status.suspicious) {
+      el.textContent = fr
+        ? `Écart d’horloge détecté (${Math.abs(status.differenceMinutes)} min). Vérifié : ${when}.`
+        : `Clock discrepancy detected (${Math.abs(status.differenceMinutes)} min). Checked: ${when}.`;
+    } else {
+      el.textContent = fr
+        ? `Horloge vérifiée par Internet : aucun écart important (${when}).`
+        : `Clock checked against Internet: no significant discrepancy (${when}).`;
+    }
+  }
+  chrome.storage.local.get([key]).then(d => render(d[key])).catch(() => render(null));
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes[key]) render(changes[key].newValue);
+  });
+})();

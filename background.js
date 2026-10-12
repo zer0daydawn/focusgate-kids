@@ -262,7 +262,6 @@ const DEFAULT_CONFIG = {
   "settings": {
     "language": "en",
     "globalEnabled": true,
-    "parentPin": "1234",
     "isParentUnlocked": false,
     "antiBrainrotPreset": "strict_child",
     "blockPageStyle": "kid_friendly",
@@ -370,6 +369,139 @@ async function ensureSchedulerAndRules() {
   await updateBlockingRules();
 }
 
+// v2.4.2: sensitive operations are verified in the trusted service worker.
+const FG_PIN_ITERATIONS = 310000;
+const FG_PIN_LOCK_MS = 15 * 60 * 1000;
+const FG_PIN_ATTEMPT_LIMIT = 5;
+let fgPinQueue = Promise.resolve();
+function fgSerial(task) {
+  const result = fgPinQueue.then(task);
+  fgPinQueue = result.catch(() => {});
+  return result;
+}
+function fgHex(bytes) { return [...bytes].map(x => x.toString(16).padStart(2, '0')).join(''); }
+function fgBytes(hex) { return new Uint8Array(hex.match(/.{2}/g).map(x => parseInt(x, 16))); }
+async function fgMakeCredential(pin) {
+  if (!/^\d{4,12}$/.test(pin)) throw new Error('PIN must contain 4–12 digits');
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+  const digest = await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:FG_PIN_ITERATIONS},key,256);
+  return {version:1,algorithm:'PBKDF2-SHA256',iterations:FG_PIN_ITERATIONS,salt:fgHex(salt),hash:fgHex(new Uint8Array(digest))};
+}
+async function fgVerifyCredential(pin, credential) {
+  if (typeof pin !== 'string' || !/^\d{4,12}$/.test(pin)) return false;
+  if (!credential || credential.version !== 1 || credential.algorithm !== 'PBKDF2-SHA256') return false;
+  const key = await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveBits']);
+  const digest = new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:fgBytes(credential.salt),iterations:credential.iterations},key,256));
+  const expected = fgBytes(credential.hash);
+  if (digest.length !== expected.length) return false;
+  let diff = 0;
+  for(let i=0;i<digest.length;i++) diff |= digest[i] ^ expected[i];
+  return diff === 0;
+}
+async function fgEnsureCredential() {
+  const data = await chrome.storage.local.get(['focusGateConfig','fgPinCredential']);
+  if (data.fgPinCredential) {
+    if(data.focusGateConfig?.settings && 'parentPin' in data.focusGateConfig.settings){
+      const cfg = data.focusGateConfig;
+      delete cfg.settings.parentPin;
+      await chrome.storage.local.set({focusGateConfig:cfg});
+    }
+    return data.fgPinCredential;
+  }
+  const cfg = data.focusGateConfig || DEFAULT_CONFIG;
+  const legacyPin = String(cfg.settings?.parentPin || '1234');
+  const credential = await fgMakeCredential(legacyPin);
+  // Write credential before removing legacy PIN, preserving recovery on interruption.
+  await chrome.storage.local.set({fgPinCredential:credential});
+  if(cfg.settings){delete cfg.settings.parentPin;await chrome.storage.local.set({focusGateConfig:cfg});}
+  return credential;
+}
+async function fgCheckPin(pin) {
+  return fgSerial(async () => {
+    const data = await chrome.storage.local.get('fgPinLock');
+    const lock = data.fgPinLock || {attempts:0,until:0};
+    if(lock.until > Date.now()) return {success:false,error:'Too many attempts. Try again in 15 minutes.',lockedUntil:lock.until};
+    const credential = await fgEnsureCredential();
+    const correct = await fgVerifyCredential(pin,credential);
+    if (!correct) {
+      const attempts = (lock.until ? 0 : (lock.attempts || 0)) + 1;
+      const until = attempts >= FG_PIN_ATTEMPT_LIMIT ? Date.now()+FG_PIN_LOCK_MS : 0;
+      await chrome.storage.local.set({fgPinLock:{attempts:until?0:attempts,until}});
+      return {success:false,error:until?'Too many attempts. Try again in 15 minutes.':'Incorrect Parent PIN',lockedUntil:until};
+    }
+    await chrome.storage.local.set({fgPinLock:{attempts:0,until:0}});
+    return {success:true};
+  });
+}
+async function fgChangePin(oldPin,newPin) {
+  if(typeof newPin !== 'string' || !/^\d{6,12}$/.test(newPin)) return {success:false,error:'New PIN must have 6–12 digits'};
+  const checked = await fgCheckPin(oldPin);
+  if(!checked.success) return checked;
+  await chrome.storage.local.set({fgPinCredential:await fgMakeCredential(newPin)});
+  return {success:true};
+}
+function fgTrustedSender(sender) {
+  const origin = chrome.runtime.getURL('');
+  return sender?.id === chrome.runtime.id &&
+    typeof sender.url === 'string' &&
+    ['blocked.html','popup.html','options.html'].some(page => sender.url.split('?')[0] === origin + page);
+}
+async function fgGrantPassAfterPin(pin) {
+  const verified=await fgCheckPin(pin);
+  if (!verified.success) return verified;
+  const expiry = Date.now() + 15*60*1000;
+  await chrome.storage.local.set({emergencyPassExpiry:expiry});
+  await updateBlockingRules();
+  return {success:true,expiry};
+}
+
+// v2.4.3: Permissions and sessions are centrally enforced by the worker.
+const FG_SESSION_MS = 10 * 60 * 1000;
+const FG_PASS_MS = 15 * 60 * 1000;
+let fgParentSession = null;
+function fgOptionsSender(sender) {
+  return fgTrustedSender(sender) && new URL(sender.url).pathname === '/options.html';
+}
+function fgSessionOK(sender, token) {
+  return fgOptionsSender(sender) && fgParentSession &&
+    typeof token === 'string' && token === fgParentSession.token &&
+    Date.now() < fgParentSession.until;
+}
+function fgSessionIssue() {
+  const token = [...crypto.getRandomValues(new Uint8Array(32))]
+    .map(v => v.toString(16).padStart(2,'0')).join('');
+  fgParentSession = {token, until:Date.now()+FG_SESSION_MS};
+  return {success:true,token,sessionUntil:fgParentSession.until};
+}
+async function fgAuthorizeDashboard(pin) {
+  const checked=await fgCheckPin(pin);
+  if(!checked.success) return checked;
+  return fgSessionIssue();
+}
+async function fgSaveConfig(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+    return {success:false,error:'Invalid configuration'};
+  // Copy only JSON data and never accept client-supplied credentials.
+  const copy=JSON.parse(JSON.stringify(payload));
+  if(!copy.settings || typeof copy.settings !== 'object' || Array.isArray(copy.settings))
+    return {success:false,error:'Invalid settings'};
+  delete copy.settings.parentPin;
+  delete copy.settings.pinCredential;
+  // Prevent a malicious config editor from injecting prototypes.
+  if(JSON.stringify(copy).length>300000) return {success:false,error:'Configuration too large'};
+  await chrome.storage.local.set({focusGateConfig:copy});
+  await updateBlockingRules();
+  return {success:true};
+}
+async function fgGrantSessionPass() {
+  const expiry=Date.now()+FG_PASS_MS;
+  await chrome.storage.local.set({emergencyPassExpiry:expiry});
+  await updateBlockingRules();
+  return {success:true,expiry};
+}
+function fgSessionRevoke() {fgParentSession=null;return {success:true};}
+
 // Initialize on install/update.
 chrome.runtime.onInstalled.addListener(async () => {
   const existing = await chrome.storage.local.get(['focusGateConfig']);
@@ -397,6 +529,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     }
     if (changed) await chrome.storage.local.set({ focusGateConfig: migrated });
   }
+  await fgEnsureCredential();
   await ensureSchedulerAndRules();
   console.log('[FocusGate Kids] Initialized successfully');
 });
@@ -404,6 +537,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 // MV3 service workers can stop between events. Recreate the scheduler/rules
 // whenever Chrome starts so blocking never depends on a past install event.
 chrome.runtime.onStartup.addListener(async () => {
+  await fgEnsureCredential();
   await ensureSchedulerAndRules();
 });
 
@@ -433,11 +567,40 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 // Listen for messages from popup, options or blocked page
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'REFRESH_RULES') {
-    updateBlockingRules().then(() => sendResponse({ success: true }));
+    if (!fgOptionsSender(sender)) {sendResponse({success:false,error:'Unauthorized sender'});return false;}
+    updateBlockingRules().then(() => sendResponse({success:true})).catch(() => sendResponse({success:false}));
     return true;
   }
-  if (message.type === 'VERIFY_PIN_AND_PASS') {
-    handleParentPass(message.pin, message.minutes || 15).then(result => sendResponse(result));
+  if (message.type === 'UNLOCK_PARENT_DASHBOARD') {
+    if (!fgOptionsSender(sender)) {sendResponse({success:false,error:'Unauthorized sender'});return false;}
+    Promise.resolve().then(() => fgAuthorizeDashboard(message.pin)).then(result => sendResponse(result ?? {success:false,error:'Empty authentication response'})).catch(() => sendResponse({success:false,error:'Authentication unavailable'}));
+    return true;
+  }
+  if (message.type === 'LOCK_PARENT_DASHBOARD') {
+    if (!fgOptionsSender(sender)) {sendResponse({success:false,error:'Unauthorized sender'});return false;}
+    sendResponse(fgSessionRevoke());return false;
+  }
+  if (message.type === 'SAVE_PARENT_CONFIG') {
+    if (!fgSessionOK(sender,message.token)) {sendResponse({success:false,error:'Parent session expired; re-enter PIN'});return false;}
+    fgSaveConfig(message.config).then(sendResponse).catch(() => sendResponse({success:false,error:'Unable to save configuration'}));
+    return true;
+  }
+  if (message.type === 'GRANT_PARENT_PASS') {
+    if (!fgSessionOK(sender,message.token)) {sendResponse({success:false,error:'Parent session expired; re-enter PIN'});return false;}
+    fgGrantSessionPass().then(sendResponse).catch(() => sendResponse({success:false,error:'Unable to grant pass'}));
+    return true;
+  }
+  if (message.type === 'CHANGE_PARENT_PIN') {
+    if (!fgTrustedSender(sender) || !sender.url.startsWith(chrome.runtime.getURL('options.html'))) {
+      sendResponse({success:false,error:'Unauthorized sender'}); return false;
+    }
+    fgChangePin(message.oldPin,message.newPin).then(sendResponse).catch(() => sendResponse({success:false,error:'PIN change failed'}));
+    return true;
+  }
+  if (message.type === 'VERIFY_PIN_AND_PASS' || message.type === 'VERIFY_PARENT_PIN') {
+    if (!fgTrustedSender(sender)) { sendResponse({success:false,error:'Unauthorized sender'}); return false; }
+    const work = message.type === 'VERIFY_PIN_AND_PASS' ? fgGrantPassAfterPin(message.pin) : fgCheckPin(message.pin);
+    work.then(sendResponse).catch(() => sendResponse({success:false,error:'PIN verification unavailable'}));
     return true;
   }
   if (message.type === 'USAGE_HEARTBEAT') {
@@ -446,20 +609,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-async function handleParentPass(pin, minutes) {
-  const data = await chrome.storage.local.get(['focusGateConfig']);
-  const cfg = data.focusGateConfig || DEFAULT_CONFIG;
-  const correctPin = cfg.settings?.parentPin || '1234';
-
-  if (String(pin).trim() !== String(correctPin).trim()) {
-    return { success: false, error: 'Incorrect Parent PIN' };
-  }
-
-  const expiry = Date.now() + (minutes * 60 * 1000);
-  await chrome.storage.local.set({ emergencyPassExpiry: expiry });
-  await updateBlockingRules();
-  return { success: true, expiry };
-}
 
 function parseTime(t) {
   const [h, m] = (t || '0:0').split(':').map(Number);
@@ -773,3 +922,134 @@ async function clearDynamicRules() {
     }
   } catch(e) {}
 }
+
+
+// v2.4.4: advisory-only time change detection. This is NOT a trusted time source.
+// Compare wall clock to the monotonic performance clock within this worker lifetime.
+// Long machine sleep may produce notifications; a clock change while Chrome is closed
+// or the worker is suspended cannot be reliably detected with this method.
+const FG_CLOCK_EVENTS_KEY = 'fgClockNotificationsV244';
+const FG_CLOCK_THRESHOLD_MS = 2 * 60 * 1000;
+const FG_CLOCK_MAX_EVENTS = 20;
+let fgClockBaseline = { wall: Date.now(), mono: performance.now() };
+let fgClockCheckQueue = Promise.resolve();
+
+async function fgClockCheck() {
+  const wall = Date.now();
+  const mono = performance.now();
+  const expectedWall = fgClockBaseline.wall + (mono - fgClockBaseline.mono);
+  const difference = wall - expectedWall;
+  // Refresh reference on each tick, to avoid accumulation of minor jitter.
+  fgClockBaseline = { wall, mono };
+  if (Math.abs(difference) < FG_CLOCK_THRESHOLD_MS) return;
+  // Ignore clearly anomalous monotonic sampling rather than guessing a reason.
+  const data = await chrome.storage.local.get([FG_CLOCK_EVENTS_KEY]);
+  const previous = Array.isArray(data[FG_CLOCK_EVENTS_KEY]) ? data[FG_CLOCK_EVENTS_KEY] : [];
+  const event = {
+    id: String(wall) + '-' + Math.random().toString(36).slice(2, 8),
+    timestamp: wall,
+    changeMinutes: Math.round(difference / 60000),
+    direction: difference < 0 ? 'backward' : 'forward'
+  };
+  await chrome.storage.local.set({
+    [FG_CLOCK_EVENTS_KEY]: [event, ...previous].slice(0, FG_CLOCK_MAX_EVENTS)
+  });
+}
+
+// Serialize writes; alarms and other events can arrive together.
+function fgQueueClockCheck() {
+  fgClockCheckQueue = fgClockCheckQueue.catch(() => {}).then(fgClockCheck);
+  return fgClockCheckQueue;
+}
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === 'fgClockCheckV244') fgQueueClockCheck();
+});
+chrome.runtime.onStartup.addListener(() => {
+  fgClockBaseline = { wall: Date.now(), mono: performance.now() };
+  chrome.alarms.create('fgClockCheckV244', { periodInMinutes: 1 });
+});
+chrome.runtime.onInstalled.addListener(() => {
+  fgClockBaseline = { wall: Date.now(), mono: performance.now() };
+  chrome.alarms.create('fgClockCheckV244', { periodInMinutes: 1 });
+});
+// An alarm is also created when the service worker starts for the first time.
+chrome.alarms.create('fgClockCheckV244', { periodInMinutes: 1 });
+
+
+// v2.4.5 — Advisory network time check (no automatic blocking).
+// Source: WorldTimeAPI, UTC unix epoch seconds. No user identifiers sent.
+// HTTP requests disclose network metadata (e.g. IP) to this third party.
+const FG_REMOTE_TIME_URL = 'https://worldtimeapi.org/api/timezone/Etc/UTC';
+const FG_REMOTE_TIME_THRESHOLD = 5 * 60 * 1000;
+const FG_REMOTE_TIME_ALARM = 'fgRemoteClockCheckV245';
+const FG_REMOTE_TIME_STATUS_KEY = 'fgRemoteTimeStatusV245';
+let fgRemoteCheckActive = false;
+
+async function fgRemoteClockCheckV245() {
+  if (fgRemoteCheckActive) return;
+  fgRemoteCheckActive = true;
+  const checkedAt = Date.now();
+  const controller = new AbortController();
+  const abortTimeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const start = Date.now();
+    const response = await fetch(FG_REMOTE_TIME_URL, {
+      signal: controller.signal,
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' }
+    });
+    const end = Date.now();
+    if (!response.ok) throw new Error('Remote time HTTP ' + response.status);
+    const body = await response.json();
+    const seconds = Number(body?.unixtime);
+    if (!Number.isSafeInteger(seconds) || seconds < 1700000000)
+      throw new Error('Remote time response invalid');
+    // Remote API precision is one second; midpoint compensates roughly for latency.
+    const remoteMillis = seconds * 1000;
+    const localMillis = start + (end - start) / 2;
+    const difference = localMillis - remoteMillis;
+    const isAnomalous = Math.abs(difference) > FG_REMOTE_TIME_THRESHOLD;
+    // Never block navigation; avoid repeated alerts for a persistent discrepancy.
+    const data = await chrome.storage.local.get(['fgClockNotificationsV244', FG_REMOTE_TIME_STATUS_KEY]);
+    let events = Array.isArray(data.fgClockNotificationsV244) ? data.fgClockNotificationsV244 : [];
+    const priorRemote = events.find(e => e && e.source === 'network-v245');
+    if (isAnomalous && (!priorRemote || Math.abs(checkedAt - Number(priorRemote.timestamp || 0)) > 60 * 60 * 1000)) {
+      events = [{
+        id: 'remote-' + checkedAt,
+        timestamp: checkedAt,
+        source: 'network-v245',
+        changeMinutes: Math.round(difference / 60000),
+        direction: difference < 0 ? 'backward' : 'forward'
+      }, ...events].slice(0, 20);
+    }
+    await chrome.storage.local.set({
+      fgClockNotificationsV244: events,
+      [FG_REMOTE_TIME_STATUS_KEY]: {
+        checkedAt, ok: true, suspicious: isAnomalous,
+        differenceMinutes: Math.round(difference / 60000)
+      }
+    });
+  } catch (_err) {
+    // Internet unavailable, server outage, or timeout: no inference of tampering.
+    await chrome.storage.local.set({
+      [FG_REMOTE_TIME_STATUS_KEY]: { checkedAt, ok: false }
+    });
+  } finally {
+    clearTimeout(abortTimeout);
+    fgRemoteCheckActive = false;
+  }
+}
+
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === FG_REMOTE_TIME_ALARM) fgRemoteClockCheckV245();
+});
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create(FG_REMOTE_TIME_ALARM, { periodInMinutes: 15 });
+  fgRemoteClockCheckV245();
+});
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create(FG_REMOTE_TIME_ALARM, { periodInMinutes: 15 });
+  fgRemoteClockCheckV245();
+});
+// Ensure check also happens if the worker is activated after an update.
+chrome.alarms.create(FG_REMOTE_TIME_ALARM, { periodInMinutes: 15 });

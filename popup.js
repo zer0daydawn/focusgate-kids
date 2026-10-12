@@ -43,6 +43,7 @@ document.getElementById('btnUnlockPass').addEventListener('click', () => {
     if (res && res.success) {
       resultEl.style.color = '#22c55e';
       resultEl.textContent = tr('✓ Pass granted for 15 minutes!');
+      document.getElementById('parentPinInput').value = '';
       initPopup();
     } else {
       resultEl.style.color = '#f43f5e';

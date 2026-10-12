@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FocusGate Kids - Anti-Brainrot Blocker",
-  "version": "2.4.1",
+  "version": "2.4.5",
   "description": "Scheduled parental web access control with editable schedules, quotas, grace warnings, active-tab enforcement, bilingual UI, and selectable block-page themes.",
   "permissions": [
     "declarativeNetRequest",
@@ -10,7 +10,8 @@
     "tabs"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "https://worldtimeapi.org/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -43,5 +44,5 @@
       ]
     }
   ],
-  "version_name": "2.4.1-distinct-themes"
+  "version_name": "2.4.5-network-clock-notifications"
 }
