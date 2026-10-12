@@ -1,57 +1,59 @@
-# FocusGate Kids — Anti-Brainrot Chrome Extension (Manifest V3)
+# FocusGate Kids
 
-A scheduled website blocker for children and teenagers equipped with a **Wildcard URL Pattern Matching Engine** to automatically block sub-paths like `/shorts`, `/live`, or `/feed` when their parent domain is blocked.
+Extension Chrome (Manifest V3) de contrôle parental des sites Web : horaires, quotas et page de pause adaptée aux enfants.
 
-## How to Install in Google Chrome on your Child's Computer:
+## Versions
 
-1. **Unpack this ZIP file** to a local folder (e.g. `Documents/FocusGateKids`).
-2. Open Google Chrome on your child's laptop / desktop and go to:
-   ```
-   chrome://extensions
-   ```
-3. In the top-right corner, toggle **Developer mode** to ON.
-4. Click the **"Load unpacked"** button in the top-left toolbar.
-5. Select the folder containing these files (where `manifest.json` resides).
-6. **FocusGate Kids** is now active! 
+- **Dernière version locale validée : v2.4.5.**
+- **Attention :** le code complet de la v2.4.5 n'a pas encore été synchronisé avec la branche `main`. Vérifier `manifest.json` avant d'installer depuis GitHub.
+- La livraison finale v2.4.5 retire le bouton temporaire **« 🔒 Reverrouiller maintenant »** et son texte d'aide.
 
-## Key Features for Parents:
-- **Wildcard URL Pattern Matching Engine**: Blocking `youtube.com` automatically blocks all sub-paths (`/shorts`, `/live`, `/feed`, etc.).
-- **Parent PIN Protection**: Children cannot disable or turn off the extension without your 4-digit PIN (Default: `1234`).
-- **Triple-Layer Interception**: Intercepts direct URL typing, YouTube SPA (pushState/yt-navigate-start) transitions, and background tab navigations.
-- **Child-Friendly Block Screen**: Encourages creative offline activities (books, Lego, drawing, outside play) instead of cold error screens.
-- **Full Graphical Options Dashboard**: Click "Open Full Parent Dashboard" in the Chrome extension to open the complete visual overview, schedule planner, and website toggles!
+## Fonctionnalités
 
-## 2.3.2 blocking fix
-- Content-script blocking now respects each schedule's `appliedCategories`.
-- The default `test` schedule includes the `custom` category so manually-added URLs are blocked from 18:00–19:00 on weekdays.
-- Dynamic blocking rules are recreated on Chrome startup.
-- Dynamic blocking rules refresh immediately when extension configuration changes.
-- DNR URL filters normalize wildcard/custom host patterns before creating Chrome rules.
-- Date overrides use the browser's local date instead of UTC date.
+- Blocage de domaines et de sous-chemins (ex. `youtube.com/shorts`), y compris les sous-domaines.
+- Horaires récurrents, exceptions par date et quotas quotidiens par catégorie.
+- Avertissements de fin de période et contrôle des onglets ouverts.
+- Interface bilingue français/anglais et thèmes de blocage **Calme** et **Ludique**.
+- Autorisation parentale temporaire de 15 minutes.
+- NIP dérivé avec PBKDF2, authentification dans le service worker, limitation des tentatives et session du tableau de bord.
+- Boîte **Notifications** informant le parent des écarts d'horloge possibles.
 
-## v2.3.5 - Daily active-use quotas
-- Added per-category daily usage quotas for Short video, Social, Gaming, Long video, and Custom sites.
-- Usage is counted only when a matching site is otherwise allowed, the tab is visible/active, and its Chrome window is focused.
-- Background tabs do not consume quota.
-- When a quota is reached, that category is blocked for the rest of the local calendar day.
-- Parent dashboard shows used/remaining time and allows enabling/disabling limits, changing minutes, and resetting today's counters.
-- Existing installations are migrated automatically with quotas disabled by default.
+## Détection de changements d'heure — v2.4.5
 
-## v2.3.6 - Grace-period warnings
-- Configurable warning period (default: 5 minutes, 1-30 minutes).
-- Shows a countdown banner on an active protected site before a scheduled block begins.
-- Shows an advance warning when a category is approaching its daily usage quota.
-- The warning is informational only; the normal schedule/quota still enforces at the cutoff.
+La boîte **Notifications** affiche des événements indicatifs :
 
-## v2.3.8 — English / French interface
-- Added persistent language setting (`settings.language`: `en` or `fr`).
-- Language selector in Parent Dashboard and popup.
-- Translates dashboard controls, schedules, quotas, blocked page, PIN messages, and grace-period warnings.
-- Language changes are applied after reload and persist across Chrome restarts.
+1. **Détection locale (v2.4.4)** : comparaison entre l'heure système et une horloge monotone pendant l'exécution du service worker ; seuil de 2 minutes.
+2. **Vérification Internet (v2.4.5)** : récupération d'une référence UTC depuis `https://worldtimeapi.org/api/timezone/Etc/UTC` au démarrage et environ toutes les 15 minutes ; notification au-delà de 5 minutes d'écart.
 
+Les 20 dernières notifications sont conservées localement. Les vérifications ne bloquent pas automatiquement les sites, et un changement d'heure détecté n'est pas une preuve d'intention. Sans connexion Internet, la vérification externe n'est pas disponible. La mise en veille et la suspension du service worker peuvent limiter la détection locale.
 
-## v2.4.1 — Block-page themes
-- Added two parent-selectable block-page themes: **Calm** (default) and **Playful**.
-- Both themes keep the existing message, alternative activities, Back action, and Parent PIN override.
-- Themes use a soft blue/violet identity, solid backgrounds, no characters or illustrations, and are designed for ages 6–10 without looking childish.
-- Theme choice is stored in `settings.blockPageTheme` and follows the existing English/French interface.
+La requête vers WorldTimeAPI peut exposer l'adresse IP au fournisseur ; elle ne transmet volontairement ni NIP ni historique de navigation.
+
+## Installer l'archive locale v2.4.5
+
+1. Décompresser `FocusGate-Kids-v2.4.5-final-README.zip` dans un dossier permanent.
+2. Ouvrir `chrome://extensions` et activer **Mode développeur**.
+3. Cliquer **Charger l'extension non empaquetée** et sélectionner le dossier où se trouve `manifest.json`.
+4. Confirmer que la version affichée est **2.4.5**.
+5. Ouvrir le tableau de bord et vérifier les réglages et la boîte Notifications.
+
+Pour mettre à jour une installation existante, sauvegarder le dossier, remplacer ses fichiers et actualiser l'extension existante dans Chrome **sans la supprimer**. Une nouvelle installation avec un identifiant différent ne reprend pas automatiquement le stockage local et le NIP.
+
+## Sécurité et limites
+
+- Le NIP ne peut pas empêcher l'utilisateur de désactiver ou supprimer l'extension via Chrome.
+- Un utilisateur ayant le contrôle du profil ou du stockage local peut contourner certaines restrictions.
+- **Écart à corriger :** dans l'archive v2.4.5 fournie, la constante `FG_PIN_LOCK_MS` vaut encore **15 minutes** alors que la configuration souhaitée était **5 minutes**. Cette anomalie reste à corriger et tester dans le code ; une modification du README ne change pas le comportement.
+- La vérification d'horloge est informative, et non une source de temps imposée à tous les horaires.
+
+## Historique
+
+| Version | Changements |
+| --- | --- |
+| 2.4.1 | Thèmes Calme et Ludique |
+| 2.4.2 | Renforcement et limitation des tentatives du NIP |
+| 2.4.3 | Contrôles des autorisations et sessions parentales |
+| 2.4.4 | Notifications locales d'écarts d'horloge |
+| **2.4.5** | Vérification de l'heure Internet et retrait du bouton de test |
+
+FocusGate Kids vise une protection parentale simple et proportionnée à un usage familial.
